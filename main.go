@@ -1,21 +1,23 @@
 package main
 
 import (
+	"mutex/cache"
 	"mutex/crawl"
 	"mutex/fetcher"
+	"sync"
 )
 
 var fakeFetcher = fetcher.FakeFetcher{
 	"https://golang.org/": &fetcher.FakeResult{
-		"The Go Programming Language",
-		[]string{
+		Body: "The Go Programming Language",
+		Urls: []string{
 			"https://golang.org/pkg/",
 			"https://golang.org/cmd/",
 		},
 	},
 	"https://golang.org/pkg/": &fetcher.FakeResult{
-		"Packages",
-		[]string{
+		Body: "Packages",
+		Urls: []string{
 			"https://golang.org/",
 			"https://golang.org/cmd/",
 			"https://golang.org/pkg/fmt/",
@@ -23,15 +25,15 @@ var fakeFetcher = fetcher.FakeFetcher{
 		},
 	},
 	"https://golang.org/pkg/fmt/": &fetcher.FakeResult{
-		"Package fmt",
-		[]string{
+		Body: "Package fmt",
+		Urls: []string{
 			"https://golang.org/",
 			"https://golang.org/pkg/",
 		},
 	},
 	"https://golang.org/pkg/os/": &fetcher.FakeResult{
-		"Package os",
-		[]string{
+		Body: "Package os",
+		Urls: []string{
 			"https://golang.org/",
 			"https://golang.org/pkg/",
 		},
@@ -39,5 +41,9 @@ var fakeFetcher = fetcher.FakeFetcher{
 }
 
 func main() {
-	crawl.Crawl("https://golang.org/", 4, fakeFetcher)
+	var wg sync.WaitGroup
+	safeCache := cache.CreateSafeCache[crawl.CachedPage]()
+	wg.Add(1) // Add the first goroutine (main call)
+	go crawl.Crawl("https://golang.org/", 4, fakeFetcher, &safeCache, &wg)
+	wg.Wait()
 }

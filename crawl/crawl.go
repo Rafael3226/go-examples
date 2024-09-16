@@ -1,27 +1,48 @@
 package crawl
 
 import (
-	"mutex/fetcher"
 	"fmt"
+	"mutex/cache"
+	"mutex/fetcher"
+	"sync"
 )
 
-// type Cache  = map[string]string;
-
-
-cache := make(map[string]string)
-
+type CachedPage struct {
+	page *fetcher.FakeResult
+	err  error
+}
 
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
-func Crawl(url string, depth int, fetcher fetcher.Fetcher) {
+func Crawl(url string, depth int, fetch fetcher.Fetcher, safeCache cache.IMap[CachedPage], wg *sync.WaitGroup) {
 	// TODO: Fetch URLs in parallel.
 	// TODO: Don't fetch the same URL twice.
 	// This implementation doesn't do either:
+	defer wg.Done()
 	if depth <= 0 {
 		return
 	}
 
-	body, urls, err := fetcher.Fetch(url)
+	cachedResults, found := safeCache.Get(url)
+	if found {
+		if cachedResults.err != nil {
+			fmt.Println("cache", cachedResults.err)
+			return
+		} else {
+			fmt.Printf("cache found: %s %q\n", url, cachedResults.page.Body)
+			for _, u := range cachedResults.page.Urls {
+				wg.Add(1)
+				Crawl(u, depth-1, fetch, safeCache, wg)
+			}
+			return
+		}
+	}
+
+	body, urls, err := fetch.Fetch(url)
+
+	if !found {
+		safeCache.Set(url, CachedPage{page: &fetcher.FakeResult{Body: body, Urls: urls}, err: err})
+	}
 
 	if err != nil {
 		fmt.Println(err)
@@ -29,9 +50,8 @@ func Crawl(url string, depth int, fetcher fetcher.Fetcher) {
 	}
 
 	fmt.Printf("found: %s %q\n", url, body)
-
 	for _, u := range urls {
-		Crawl(u, depth-1, fetcher)
+		wg.Add(1)
+		Crawl(u, depth-1, fetch, safeCache, wg)
 	}
-	return
 }
